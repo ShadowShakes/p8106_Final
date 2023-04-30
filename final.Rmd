@@ -67,8 +67,15 @@ covid_df = covid_df %>%
 
 # data partition for training and testing
 indexTrain = createDataPartition(y = covid_df$recovery_time, p = 0.8, list = FALSE)
-trainData = covid_df[indexTrain, ]
-testData = covid_df[-indexTrain, ]
+train_df = covid_df[indexTrain, ]
+test_df = covid_df[-indexTrain, ]
+
+covid_df2 = model.matrix(recovery_time ~., covid_df)[, -1]
+x = covid_df2[indexTrain, ]
+y = covid_df$recovery_time[indexTrain]
+
+# cv setting
+ctrl = trainControl(method = "repeatedcv", number = 10, repeats = 5)
 ```
 
 
@@ -78,6 +85,7 @@ testData = covid_df[-indexTrain, ]
 nrow(covid_df)
 ncol(covid_df)
 
+# data summary
 summary(covid_df)
 
 # feature plot
@@ -91,12 +99,7 @@ trellis.par.set(theme)
 
 # feature plot of continuous variable
 featurePlot(x = covid_df[ ,1:14] 
-            %>% select(age,
-                       height,
-                       weight,
-                       bmi,
-                       sbp,
-                       ldl),
+            %>% select(age, height, weight, bmi, sbp, ldl),
             y = covid_df[ ,15],
             plot = "scatter",
             span = .5,
@@ -104,44 +107,36 @@ featurePlot(x = covid_df[ ,1:14]
             type = c("p", "smooth"),
             layout = c(3, 1))
 
-# feature plot of discrete variables
-fea_dis = covid_df %>%
-  select(-age,
-         -height,
-         -weight,
-         -bmi,
-         -sbp,
-         -ldl) %>%
+# feature plot of categorical variables
+cate_df = covid_df %>%
+  select(-age, -height, -weight, -bmi, -sbp, -ldl) %>%
   pivot_longer(
    gender:study,
    names_to = "type",
    values_to = "category"
   )
 
-dis_sub1 = fea_dis %>%
+cate_part1 = cate_df %>%
   filter(type %in% c("diabetes", "gender", "hypertension", "race"))
 
-dis_sub2 = fea_dis %>%
+cate_part2 = cate_df %>%
   filter(type %in% c("severity", "smoking", "study", "vaccine"))
   
-ggplot(dis_sub1, aes(category, recovery_time, fill = type)) + 
+ggplot(cate_part1, aes(category, recovery_time, fill = type)) + 
   geom_boxplot() + 
   theme(axis.text.x = element_text(angle = 60, vjust = 1, hjust = 1)) + 
   facet_grid(. ~type, scales = "free_x")
 
-ggplot(dis_sub2, aes(category, recovery_time, fill = type)) + 
+ggplot(cate_part2, aes(category, recovery_time, fill = type)) + 
   geom_boxplot() + 
   theme(axis.text.x = element_text(angle = 60, vjust = 1, hjust = 1)) + 
   facet_grid(. ~type, scales = "free_x")
 
 # correlation visualization
-corrplot(cor(covid_df 
-            %>% select(age,
-                       height,
-                       weight,
-                       bmi,
-                       sbp,
-                       ldl)), 
+cor_df = covid_df %>% 
+  select(age, height, weight, bmi, sbp, ldl)
+
+corrplot(cor(cor_df), 
          method = "circle", 
          type = "lower",
          diag = FALSE,
@@ -151,43 +146,47 @@ corrplot(cor(covid_df
 # Model Fitting
 
 ## KNN Model
-This is not included in final report.
 ```{r}
-ctrl = trainControl(method = "repeatedcv", number = 10, repeats = 5)
+set.seed(5154)
 
 kGrid = expand.grid(k = seq(from = 1, to = 40, by = 1))
 
-dat2 = model.matrix(recovery_time ~., dat)[, -1]
-x = dat2[indexTrain, ]
-y = dat$recovery_time[indexTrain]
-
-set.seed(5154)
+# knn model
 fit_knn = train(x, y,
                 method = "knn",
                 trControl = ctrl,
+                preProcess = c("center", "scale"),
                 tuneGrid = kGrid
                 )
 
+# model visual
 ggplot(fit_knn)
+
 # best k
 fit_knn$finalModel$k
 
 # test error
 pred_knn = predict(fit_knn, newdata = x)
-error_knn = mean((y - pred_knn)^2)
-error_knn
+test_error_knn = mean((y - pred_knn)^2)
+test_error_knn
 ```
 
+## Linear Model Series
 
-## Linear Regression
+In this section, we adopt linear models including linear regression, Ridge regression and Lasso regression.
+
+### Linear Regression
 ```{r}
 # multivariate linear regression
 set.seed(5154)
+
+# linear regression
 fit_lm = train(x, y,
                method = "lm",
                trControl = ctrl,
                preProcess = c("center", "scale"))
-# model output
+
+# model summary
 summary(fit_lm)
 
 # importance
@@ -195,16 +194,12 @@ plot(varImp(fit_lm, scale = TRUE))
 
 # test error
 pred_lm = predict(fit_lm, newdata = dat2[-indexTrain, ])
-error_lm = mean((pred_lm - dat$recovery_time[-indexTrain])^2)
-error_lm
-
-# best subset model selection study
-regsubsetsObj = regsubsets(recovery_time ~ ., data = trainData, method = "exhaustive", nbest = 1)
-plot(regsubsetsObj, scale = "bic")
+test_error_lm = mean((pred_lm - test_df$recovery_time)^2)
+test_error_lm
 ```
 
 
-## Ridge Regression
+### Ridge Regression
 ```{r}
 # Ridge regression
 set.seed(5154)
@@ -230,7 +225,7 @@ error_ridge
 ```
 
 
-## Lasso Regression (not included in final report)
+### Lasso Regression
 ```{r}
 # Lasso regression
 set.seed(5154)
@@ -241,22 +236,24 @@ fit_lasso = train(x, y,
                   trControl = ctrl,
                   preProcess = c("center", "scale"))
 
+# model 
 plot(fit_lasso, xTrans = log, xlab = "log(lambda)")
 
+# best tune and non-zero coefficients
 fit_lasso$bestTune
 coef(fit_lasso$finalModel, s = fit_lasso$bestTune$lambda)
 
-# importance
+# variable importance
 plot(varImp(fit_lasso, scale = TRUE))
 
 # test error
-pred_lasso = predict(fit_lasso, newdata = dat2[-indexTrain, ])
-error_lasso = mean((pred_lasso - dat$recovery_time[-indexTrain])^2)
-error_lasso
+pred_lasso = predict(fit_lasso, newdata = covid_df2[-indexTrain, ])
+test_error_lasso = mean((pred_lasso - dat$recovery_time[-indexTrain])^2)
+test_error_lasso
 ```
 
 
-## Elastic Net
+### Elastic Net
 This is not included in final report.
 ```{r}
 # Elastic net model
@@ -383,8 +380,8 @@ error_mars = mean((pred_mars - dat$recovery_time[-indexTrain])^2)
 error_mars
 ```
 
-
-## CART Approach
+## Tree Model
+### CART Approach
 ```{r}
 set.seed(5154)
 fit_rpart = train(x, y,
@@ -408,7 +405,7 @@ error_rpart
 
 
 
-# Model Comparison
+# Model Selection
 ```{r}
 # model comparison
 set.seed(5154)
@@ -425,8 +422,13 @@ summary(resamp)
 parallelplot(resamp, metric = "RMSE")
 bwplot(resamp, metric = "RMSE")
 bwplot(resamp, metric = "Rsquared")
+```
 
-# compare testing
+We select model based on cross-validation error and interpretability.
+
+# Model test performance.
+We compare the test performance on test dataset. Reminder: this is only a comparison, we haven't used test data for model selection, unless you named the test data as "validation data".
+```{r}
 error_test = 
   tibble(
     cart = error_rpart,
