@@ -1,5 +1,5 @@
 ---
-title: "P8106 Final Project"
+title: "P8106 Final Project Primary Analysis"
 author: "Shaohan Chen sc5154  XinRen xr2160"
 date: "2023-04-28"
 output: pdf_document
@@ -21,6 +21,7 @@ library(rpart.plot)
 library(tidyverse)
 ```
 
+In this part, we give the secondary analysis of the recovery time prediction, where recovery time is taken as a categorical discrete variable.
 
 # Data manipulate and tidy
 ```{r}
@@ -47,23 +48,9 @@ covid_df = merge_df %>%
     vaccine = factor(vaccine, levels = c(0, 1)),
     severity = factor(severity, levels = c(0, 1)),
     study = factor(study, levels = c("A", "B", "C")),
+    recovery_time = factor(ifelse(recovery_time > 30, "long", "short"), levels = c("short", "long"))
     ) %>%
   select(-id)
-
-# check the distribution of response variable density
-ggplot(dat, aes(x = recovery_time)) + 
-  geom_density(color = "black", fill = "gray") + 
-  labs(title =  "distribution of recovery time", x = "recovery time", y = "density") +
-  theme(plot.title = element_text(hjust = 0.5, vjust = 0.5))
-
-ggplot(dat, aes(x = log(recovery_time))) + 
-  geom_density(color = "black", fill = "gray") + 
-  labs(title =  "distribution of recovery time", x = "log recovery time", y = "density") +
-  theme(plot.title = element_text(hjust = 0.5, vjust = 0.5))
-
-# the distribution of response variable is very right-skewed, thus we adopt log transformation
-covid_df = covid_df %>%
-  mutate(recovery_time = log(recovery_time))
 
 # data partition for training and testing
 indexTrain = createDataPartition(y = covid_df$recovery_time, p = 0.8, list = FALSE)
@@ -97,45 +84,17 @@ theme$plot.line$lwd = 2
 theme$strip.background$col = rgb(.0, .2, .6, .2)
 trellis.par.set(theme)
 
-# feature plot of continuous variable
-featurePlot(x = covid_df[ ,1:14] 
-            %>% select(age, height, weight, bmi, sbp, ldl),
-            y = covid_df[ ,15],
-            plot = "scatter",
-            span = .5,
-            labels = c("Predictors","Y"),
-            type = c("p", "smooth"),
-            layout = c(3, 1))
-
-# feature plot of categorical variables
-cate_df = covid_df %>%
-  select(-age, -height, -weight, -bmi, -sbp, -ldl) %>%
-  pivot_longer(
-   gender:study,
-   names_to = "type",
-   values_to = "category"
-  )
-
-cate_part1 = cate_df %>%
-  filter(type %in% c("diabetes", "gender", "hypertension", "race"))
-
-cate_part2 = cate_df %>%
-  filter(type %in% c("severity", "smoking", "study", "vaccine"))
-  
-ggplot(cate_part1, aes(category, recovery_time, fill = type)) + 
-  geom_boxplot() + 
-  theme(axis.text.x = element_text(angle = 60, vjust = 1, hjust = 1)) + 
-  facet_grid(. ~type, scales = "free_x")
-
-ggplot(cate_part2, aes(category, recovery_time, fill = type)) + 
-  geom_boxplot() + 
-  theme(axis.text.x = element_text(angle = 60, vjust = 1, hjust = 1)) + 
-  facet_grid(. ~type, scales = "free_x")
-
-# correlation visualization
 cor_df = covid_df %>% 
   select(age, height, weight, bmi, sbp, ldl)
 
+featurePlot(x = cor_df,
+            y = covid_df$recovery_time,
+            scales = list(x = list(relation = "free"),
+                          y = list(relation = "free")),
+            plot = "box", pch = "|",
+            auto.key = list(columns = 2))
+
+# correlation visualization
 corrplot(cor(cor_df), 
          method = "circle", 
          type = "lower",
@@ -175,112 +134,9 @@ test_error_knn
 
 In this section, we adopt linear models including linear regression, Ridge regression and Lasso regression.
 
-### Linear Regression
+### Logistic Regression
 ```{r}
-# multivariate linear regression
-set.seed(5154)
-
-# linear regression
-fit_lm = train(x, y,
-               method = "lm",
-               trControl = ctrl,
-               preProcess = c("center", "scale"))
-
-# model summary
-summary(fit_lm)
-
-# importance
-plot(varImp(fit_lm, scale = TRUE))
-
-# test error
-pred_lm = predict(fit_lm, newdata = dat2[-indexTrain, ])
-test_error_lm = mean((pred_lm - test_df$recovery_time)^2)
-test_error_lm
-```
-
-
-### Ridge Regression
-```{r}
-# Ridge regression
-set.seed(5154)
-fit_ridge = train(x, y,
-                  method = "glmnet",
-                  tuneGrid = expand.grid(alpha = 0,
-                                         lambda = exp(seq(8, -6, length = 100))),
-                  trControl = ctrl,
-                  preProcess = c("center", "scale"))
-
-plot(fit_ridge, xTrans = log, xlab = "log(lambda)")
-
-fit_ridge$bestTune
-coef(fit_ridge$finalModel, s = fit_ridge$bestTune$lambda)
-
-# importance
-plot(varImp(fit_ridge, scale = TRUE))
-
-# test error1
-pred_ridge = predict(fit_ridge, newdata = dat2[-indexTrain, ])
-error_ridge = mean((pred_ridge - dat$recovery_time[-indexTrain])^2)
-error_ridge
-```
-
-
-### Lasso Regression
-```{r}
-# Lasso regression
-set.seed(5154)
-fit_lasso = train(x, y,
-                  method = "glmnet",
-                  tuneGrid = expand.grid(alpha = 1,
-                                         lambda = exp(seq(4, -4, length = 50))),
-                  trControl = ctrl,
-                  preProcess = c("center", "scale"))
-
-# model 
-plot(fit_lasso, xTrans = log, xlab = "log(lambda)")
-
-# best tune and non-zero coefficients
-fit_lasso$bestTune
-coef(fit_lasso$finalModel, s = fit_lasso$bestTune$lambda)
-
-# variable importance
-plot(varImp(fit_lasso, scale = TRUE))
-
-# test error
-pred_lasso = predict(fit_lasso, newdata = covid_df2[-indexTrain, ])
-test_error_lasso = mean((pred_lasso - dat$recovery_time[-indexTrain])^2)
-test_error_lasso
-```
-
-
-### Elastic Net
-This is not included in final report.
-```{r}
-# Elastic net model
-set.seed(5154)
-fit_enet = train(x, y,
-                  method = "glmnet",
-                  tuneGrid = expand.grid(alpha = seq(0, 1, length = 21),
-                                         lambda = exp(seq(2, -8, length = 50))),
-                  trControl = ctrl,
-                 preProcess = c("center", "scale"))
-
-fit_enet$bestTune
-
-myCol = rainbow(25)
-myPar = list(superpose.symbol = list(col = myCol),
-             superpose.line = list(col = myCol))
-plot(fit_enet, par.settings = myPar)
-
-# importance
-plot(varImp(fit_enet, scale = TRUE))
-
-coef(fit_enet$finalModel, s = fit_enet$bestTune$lambda)
-
-# test error
-pred_enet = predict(fit_enet, newdata = dat2[-indexTrain, ])
-error_enet = mean((pred_enet - dat$recovery_time[-indexTrain])^2)
-error_enet
+d
 ```
 
 
