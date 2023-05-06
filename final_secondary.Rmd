@@ -130,133 +130,74 @@ test_error_knn = mean((y - pred_knn)^2)
 test_error_knn
 ```
 
-## Linear Model Series
+## Ensemble methods
 
-In this section, we adopt linear models including linear regression, Ridge regression and Lasso regression.
+### Bagging
 
-### Logistic Regression
-```{r}
-d
-```
+### Boosting
 
+## Support Vector Machines
 
-## PCR Model
 ```{r}
 set.seed(5154)
-fit_pcr = train(x, y,
-                method = "pcr",
-                trControl = ctrl,
-                tuneGrid = data.frame(ncomp = 1:19),
-                preProcess = c("center", "scale"))
+# kernlab
+fit_svml = train(recovery_time ~ .,
+                 data = train_df,
+                 method = "svmLinear",
+                 tuneGrid = data.frame(C = exp(seq(-5, 2, len = 50))),
+                 preProcess = c("center", "scale"),
+                 trControl = ctrl)
 
-ggplot(fit_pcr, highlight = TRUE) + theme_bw()
+plot(fit_svml, highlight = TRUE, xTrans = log)
 
-coef(fit_pcr$finalModel)
+# e1071
+set.seed(5154)
+fit_svml2 = train(recovery_time ~ .,
+                 data = train_df,
+                 method = "svmLinear2",
+                 tuneGrid = data.frame(C = exp(seq(-5, 2, len = 50))),
+                 preProcess = c("center", "scale"),
+                 trControl = ctrl)
 
-# importance
-plot(varImp(fit_pcr, scale = TRUE))
+plot(fit_svml2, highlight = TRUE, xTrans = log)
 
-x2 = model.matrix(recovery_time ~., dat)[-indexTrain, -1]
-y2 = dat$recovery_time[-indexTrain]
 
-# test error
-pred_pcr = predict(fit_pcr, newdata = x2)
-error_pcr = mean((y2 - pred_pcr)^2)
-error_pcr
+grid_svmr = expand.grid(C = exp(seq(1, 7, len = 50)),
+                        sigma = exp(seq(-10, -2, len = 20)))
+
+set.seed(5154)
+fit_svmr = train(recovery_time ~ .,
+                 data = train_df,
+                 method = "svmRadialSigma",
+                 tuneGrid = grid_svmr,
+                 preProcess = c("center", "scale"),
+                 trControl = ctrl)
+
+myCol = rainbow(25)
+myPar = list(superpose.model = list(col = myCol),
+             superpose.line = list(col = myCol))
+
+plot(fit_svmr, highlight = TRUE, par.settings = myPar)
+
+set.seed(5154)
+fit_svmr2 = train(recovery_time ~ .,
+                 covid_df,
+                 subset = indexTrain,
+                 method = "svmRadialCost",
+                 tuneGrid = data.frame(C = exp(seq(-3, 3, len = 20))),
+                 preProcess = c("center", "scale"),
+                 trControl = ctrl)
+
+plot(fit_svmr, highlight = TRUE, par.settings = myPar)
 ```
 
-
-## PLS Model
-This is not included in final report.
+Compare different SVM models.
 ```{r}
-# PLS model
-set.seed(5154)
-fit_pls = train(x, y,
-                method = "pls",
-                tuneGrid = data.frame(ncomp = 1: 19),
-                trControl = ctrl,
-                preProcess = c("center", "scale"))
-
-ggplot(fit_pls, highlight = TRUE)
-
-# importance
-plot(varImp(fit_pls, scale = TRUE))
-
-# test error
-pred_pls = predict(fit_pls, newdata = x2)
-error_pls = mean((y2 - pred_pls)^2)
-error_pls
-```
-
-
-## GAM Model
-```{r}
-# GAM model
-set.seed(5154)
-fit_gam = train(x, y,
-                method = "gam",
-                trControl = ctrl,
-                tuneGrid = data.frame(method = "GCV.Cp", select = c(TRUE,FALSE)),
-                preProcess = c("center", "scale"))
-
-fit_gam$bestTune
-fit_gam$finalModel
-fit_gam$finalModel$coefficients
-
-# test error
-pred_gam = predict(fit_gam, newdata = dat2[-indexTrain, ])
-error_gam = mean((pred_gam - dat$recovery_time[-indexTrain])^2)
-error_gam
-```
-
-
-## MARS Model
-```{r}
-# MARS model
-mars_grid = expand.grid(degree = 1:3,
-                        nprune = 2:15)
-set.seed(5154)
-fit_mars = train(x, y,
-                 method = "earth",
-                 tuneGrid = mars_grid,
-                 trControl = ctrl,
-                 preProcess = c("center", "scale"))
-
-ggplot(fit_mars)
-fit_mars$bestTune
-fit_mars$finalModel
-coef(fit_mars$finalModel)
-
-# importance
-plot(varImp(fit_mars, scale = TRUE))
-
-# test error
-pred_mars = predict(fit_mars, newdata = dat2[-indexTrain, ])
-error_mars = mean((pred_mars - dat$recovery_time[-indexTrain])^2)
-error_mars
-```
-
-## Tree Model
-### CART Approach
-```{r}
-set.seed(5154)
-fit_rpart = train(x, y,
-                 method = "rpart",
-                 tuneGrid = data.frame(cp = exp(seq(-6, -2, length = 50))),
-                 trControl = ctrl,
-                 preProcess = c("center", "scale"))
-
-ggplot(fit_rpart, highlight = TRUE)
-fit_rpart$bestTune$cp
-rpart.plot(fit_rpart$finalModel)
-
-# importance
-plot(varImp(fit_rpart, scale = TRUE))
-
-# test error
-pred_rpart = predict(fit_rpart, newdata = dat2[-indexTrain, ])
-error_rpart = mean((pred_rpart - dat$recovery_time[-indexTrain])^2)
-error_rpart
+resamp_svm = resamples(list(svmr = fit_svmr,
+                            svmr2 = fit_svmr2,
+                            svml = fit_svml,
+                            svml2 = fit_svml2))
+bwplot(resamp_svm)
 ```
 
 
