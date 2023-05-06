@@ -1,5 +1,5 @@
 ---
-title: "P8106 Final Project Primary Analysis"
+title: "P8106 Final Project Secondary Analysis"
 author: "Shaohan Chen sc5154  XinRen xr2160"
 date: "2023-04-28"
 output: pdf_document
@@ -35,7 +35,7 @@ set.seed(2160)
 df2 = dat[sample(1:10000, 2000),]
 merge_df = rbind(df1, df2) %>% unique()
 
-# tidy the dataset
+# tidy the dataset, and consider response as a binary outcome
 covid_df = merge_df %>%
   janitor::clean_names() %>%
   na.omit() %>%
@@ -62,7 +62,9 @@ x = covid_df2[indexTrain, ]
 y = covid_df$recovery_time[indexTrain]
 
 # cv setting
-ctrl = trainControl(method = "repeatedcv", number = 10, repeats = 5)
+ctrl_class = trainControl(method = "cv",
+                          classProbs = TRUE,
+                          summaryFunction = twoClassSummary)
 ```
 
 
@@ -106,19 +108,16 @@ corrplot(cor(cor_df),
 
 ## KNN Model
 ```{r}
-set.seed(5154)
-
 kGrid = expand.grid(k = seq(from = 1, to = 40, by = 1))
 
-# knn model
+set.seed(5154)
 fit_knn = train(x, y,
                 method = "knn",
-                trControl = ctrl,
+                trControl = _class,
                 preProcess = c("center", "scale"),
                 tuneGrid = kGrid
                 )
 
-# model visual
 ggplot(fit_knn)
 
 # best k
@@ -130,14 +129,220 @@ test_error_knn = mean((y - pred_knn)^2)
 test_error_knn
 ```
 
-## Ensemble methods
+
+## Logisitc Regression Series
+
+### GLM
+```{r}
+set.seed(5154)
+fit_glm = train(x, y,
+                method = "glm",
+                metric = "ROC",
+                trControl = ctrl_class)
+```
+
+### Penalized Logistic Regression
+```{r}
+glmn_Grid = expand.grid(.alpha = seq(0, 1, length = 21),
+                       .lambda = exp(seq(-8, -1, length = 50)))
+
+set.seed(5154)
+fit_glmn = train(x, y,
+                 method = "glmnet",
+                 tuneGrid = glm_Grid,
+                 metric = "ROC",
+                 trControl = ctrl_class)
+
+fit_glmn$bestTune
+
+myCol = rainbow(25)
+myPar = list(superpose.symbol = list(col = myCol),
+             uperpose.line = list(col = myCol))
+
+plot(model.glmn, par.settings = myPar, xTrans = function(x) log(x))
+```
+
+### GAM
+```{r}
+set.seed(5154)
+fit_gam = train(x, y,
+                method = "gam",
+                metric = "ROC",
+                trControl = ctrl_class)
+
+fit_gam$finalModel
+
+plot(fit_gam$finalModel, select = 3)
+```
+
+### MARS
+```{r}
+set.seed(5154)
+fit_mars = train(x, y,
+                 method = "earth",
+                 tuneGrid = expand.grid(degree = 1:4,
+                                        nprune = 2:20),
+                 metric = "ROC",
+                 trControl = ctrl_class)
+
+plot(fit_mars)
+
+coef(fit_mars$finalModel)
+```
+
+### Comparison of tree models
+```{r}
+resamp_glm = resamples(list(glm = fit_glm,
+                            glmnet = fit_glmn,
+                            gam = fit_gam,
+                            mars = fit_mars))
+summary(resamp_glm)
+bwplot(resamp_glm)
+```
+
+
+## Discriminant Analysis
+
+### LDA
+```{r}
+set.seed(5154)
+fit_lda = train(x, y,
+                method = "lda",
+                metric = "ROC",
+                trControl = ctrl_class)
+```
+
+### QDA
+```{r}
+set.seed(5154)
+fit_qda = train(x, y,
+                method = "qda",
+                metric = "ROC",
+                trControl = ctrl_class)
+```
+
+### Naive Bayes
+```{r}
+nb_Grid = expand.grid(usekernal = c(FALSE, TRUE),
+                      fL = 1,
+                      adjust = seq(0.2, 3, by = 0.2))
+
+set.seed(5154)
+fit_nb = train(x,y,
+               method = "nb",
+               tuneGrid = nbGrid,
+               metric = "ROC",
+               trControl = ctrl_class)
+
+plot(fit_nb)
+```
+
+### Comparison of DA methods
+```{r}
+resamp_da = resamples(list(lda = fit_lda,
+                            qda = fit_qda,
+                            nb = fit_nb))
+summary(resamp_da)
+bwplot(resamp_da)
+```
+
+
+## Tree Models
+
+### CART
+```{r}
+set.seed(5154)
+fit_rpart = train(recovery_time ~ .,
+                  covid_df,
+                  subset = indexTrain,
+                  method = "rpart",
+                  tuneGrid = data.frame(cp = exp(seq(-6, -3, len = 50))),
+                  trControl = ctrl_class,
+                  metric = "ROC")
+
+ggplot(fit_rpart, highlight = TRUE)
+
+rpart.plot(fit_rpart$finalModel)
+```
+
+### CIT
+```{r}
+set.seed(5154)
+fit_ctree = train(recovery_time ~ .,
+                  covid_df,
+                  subset = indexTrain,
+                  method = "ctree",
+                  tuneGrid = data.frame(mincriterion = 1 - exp(seq(-2, -1, length = 50))),
+                  metric = "ROC",
+                  trControl = ctrl_class)
+
+ggplot(fit_ctree, highlight = TRUE)
+
+plot(fit_ctree$finalModel)
+```
+
+### Comparison of tree models
+```{r}
+resamp_tree = resamples(list(cart = fit_cart,
+                            cit = fit_ctree))
+summary(resamp_tree)
+bwplot(resamp_tree)
+```
+
+
+## Ensemble methods for classification
 
 ### Bagging
+Random forest for classification.
+```{r}
+rf_grid = expand.grid(mtry = 1:19,
+                      splitrule = "gini",
+                      min.node.size = seq(from = 2, to = 10, by = 2))
+
+set.seed(5154)
+fit_ranfo = train(recovery_time ~ . ,
+               train_df,
+               method = "ranger",
+               tuneGrid = rf_grid,
+               metric = "ROC",
+               trControl = ctrl_class,
+               preProcess = c("center", "scale"))
+
+ggplot(fit_ranfo, highlight = TRUE)
+```
 
 ### Boosting
+AdaBoost is adopted.
+```{r}
+gbm_grid = expand.grid(n.trees = c(500,1000,2000,3000,4000,5000),
+                       interaction.depth = 1:3,
+                       shrinkage = c(0.005,0.01),
+                       n.minobsinnode = c(1))
+
+fit_boost = train(recovery_time ~ . ,
+               covid_df,
+               subset = indexTrain,
+               method = "gbm",
+               tuneGrid = gbm_grid,
+               verbose = FALSE,
+               distribution = "adaboost",
+               metric = "ROC",
+               trControl = ctrl_class,
+               preProcess = c("center", "scale"))
+
+ggplot(fit_boost, highlight = TRUE)
+```
+
+### Comparison of ensemble methods
+```{r}
+resamp_ens = resamples(list(rf = fit_ranfo,
+                            adaboost = fit_boost))
+summary(resamp_res)
+bwplot(resamp_svm)
+```
+
 
 ## Support Vector Machines
-
 ```{r}
 set.seed(5154)
 # kernlab
@@ -146,7 +351,7 @@ fit_svml = train(recovery_time ~ .,
                  method = "svmLinear",
                  tuneGrid = data.frame(C = exp(seq(-5, 2, len = 50))),
                  preProcess = c("center", "scale"),
-                 trControl = ctrl)
+                 trControl = ctrl_class)
 
 plot(fit_svml, highlight = TRUE, xTrans = log)
 
@@ -157,7 +362,7 @@ fit_svml2 = train(recovery_time ~ .,
                  method = "svmLinear2",
                  tuneGrid = data.frame(C = exp(seq(-5, 2, len = 50))),
                  preProcess = c("center", "scale"),
-                 trControl = ctrl)
+                 trControl = ctrl_class)
 
 plot(fit_svml2, highlight = TRUE, xTrans = log)
 
@@ -171,7 +376,7 @@ fit_svmr = train(recovery_time ~ .,
                  method = "svmRadialSigma",
                  tuneGrid = grid_svmr,
                  preProcess = c("center", "scale"),
-                 trControl = ctrl)
+                 trControl = ctrl_class)
 
 myCol = rainbow(25)
 myPar = list(superpose.model = list(col = myCol),
@@ -186,12 +391,12 @@ fit_svmr2 = train(recovery_time ~ .,
                  method = "svmRadialCost",
                  tuneGrid = data.frame(C = exp(seq(-3, 3, len = 20))),
                  preProcess = c("center", "scale"),
-                 trControl = ctrl)
+                 trControl = )
 
 plot(fit_svmr, highlight = TRUE, par.settings = myPar)
 ```
 
-Compare different SVM models.
+### Comparison of SVM methods
 ```{r}
 resamp_svm = resamples(list(svmr = fit_svmr,
                             svmr2 = fit_svmr2,
@@ -203,6 +408,8 @@ bwplot(resamp_svm)
 
 
 # Model Selection
+
+Compare the best models selected from each section.
 ```{r}
 # model comparison
 set.seed(5154)

@@ -35,7 +35,7 @@ set.seed(2160)
 df2 = dat[sample(1:10000, 2000),]
 merge_df = rbind(df1, df2) %>% unique()
 
-# tidy the dataset
+# tidy the dataset, and consider response as a continous variable
 covid_df = merge_df %>%
   janitor::clean_names() %>%
   na.omit() %>%
@@ -381,7 +381,7 @@ error_mars = mean((pred_mars - dat$recovery_time[-indexTrain])^2)
 error_mars
 ```
 
-## Tree Model
+## Regression Tree Model
 
 ### CART Approach
 ```{r}
@@ -404,6 +404,11 @@ pred_rpart = predict(fit_rpart, newdata = dat2[-indexTrain, ])
 error_rpart = mean((pred_rpart - dat$recovery_time[-indexTrain])^2)
 error_rpart
 ```
+
+### Comparison of regression tree models
+
+
+## Ensemble methods for regression
 
 ### Bagging
 ```{r}
@@ -443,10 +448,7 @@ fit_boost = train(recovery_time ~ . ,
 ggplot(fit_boost, highlight = TRUE)
 ```
 
-### Supoort Vector Machine
-```{r}
-set.seed(5154)
-```
+### Comparison of ensemble learning methods
 
 
 # Model Selection
